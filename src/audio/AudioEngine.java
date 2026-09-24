@@ -1,4 +1,4 @@
-﻿package audio;
+package audio;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
@@ -104,3 +104,4 @@ public static void main(String[] args) throws InterruptedException {
     Thread.sleep(1200);
 }
 }
+
