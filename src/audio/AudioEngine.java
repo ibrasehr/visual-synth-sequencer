@@ -45,7 +45,7 @@ public final class AudioEngine {
     // ---- Audio format & pool -------------------------------------------------------------
     private static final int SAMPLE_RATE = 44100;
     private static final int BYTES_PER_FRAME = 2;             // 16-bit mono
-    private static final int POOL_SIZE = 8;                    // Maximum simultaneous notes
+    private static final int POOL_SIZE = 8;                  // Maximum simultaneous notes
     private static final int LINE_BUFFER_MS = 50;             // Lower = less latency, more underrun risk
     private static final double MAX_DURATION_MS = 10_000;
 
@@ -56,6 +56,13 @@ public final class AudioEngine {
     private static final double DECAY_MS = 30.0;
     private static final double SUSTAIN_LEVEL = 0.8;
     private static final double RELEASE_MS = 25.0;
+
+    // ---- Filter Hook ---------------------------------------------------------------------
+    private static final SweepFilter filter = new SweepFilter();
+
+    public static SweepFilter getFilter() {
+        return filter;
+    }
 
     // ---- Buffer cache --------------------------------------------------------------------
     private static final int MAX_CACHE_ENTRIES = 128;
@@ -217,7 +224,10 @@ public final class AudioEngine {
             double envelope = calculateEnvelope(frame, totalFrames, attackFrames, decayFrames, sustainFrames, releaseFrames);
             double sampleValue = generateSample(wf, freq, frame) * envelope * masterGain;
 
-            short pcmSample = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, Math.round(sampleValue * 32767.0)));
+            // Apply resonant low-pass sweep filter
+            float filteredSample = filter.process((float) sampleValue);
+
+            short pcmSample = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, Math.round(filteredSample * 32767.0)));
 
             // Big-endian 16-bit PCM mono
             buffer[frame * 2] = (byte) ((pcmSample >> 8) & 0xFF);
