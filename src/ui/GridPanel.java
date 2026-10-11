@@ -6,20 +6,15 @@ import java.awt.event.MouseEvent;
 import javax.swing.*;
 import model.SequencerModel;
 
+/**
+ * Custom-rendered matrix grid component displaying 16 steps by 8 pitch rows.
+ * Features dynamic playhead animations and real-time palette updates via UITheme.
+ */
 public class GridPanel extends JPanel {
+    private static final long serialVersionUID = 1L;
+
     private final SequencerModel model;
     private int playheadStep = -1;
-
-    // Theme & Visual Colors
-    private static final Color BG_DARK = new Color(20, 20, 24);
-    private static final Color CELL_INACTIVE = new Color(40, 40, 48);
-    private static final Color PURPLE_GLOW = new Color(160, 80, 255);
-    private static final Color PURPLE_ACTIVE = new Color(200, 140, 255);
-    private static final Color PLAYHEAD_COLOR = new Color(255, 255, 255, 25);
-    private static final Color TEXT_LIGHT = new Color(220, 220, 230);
-    private static final Color TEXT_MUTED = new Color(140, 140, 160);
-    private static final Color GRID_CONTAINER_BG = new Color(30, 30, 36);
-    private static final Color GRID_CONTAINER_BORDER = new Color(60, 60, 70);
 
     private static final String[] ROW_LABELS = {"C5", "B4", "A4", "G4", "F4", "E4", "D4", "C4"};
     private static final int START_X = 50;
@@ -31,7 +26,7 @@ public class GridPanel extends JPanel {
         int preferredWidth = START_X + UITheme.STEPS * (UITheme.CELL_SIZE + UITheme.GRID_GAP) + 30;
         int preferredHeight = START_Y + UITheme.ROWS * (UITheme.CELL_SIZE + UITheme.GRID_GAP) + 30;
         setPreferredSize(new Dimension(Math.max(800, preferredWidth), Math.max(400, preferredHeight)));
-        setBackground(BG_DARK);
+        setBackground(UITheme.getBackgroundDark());
 
         // Mouse click listener for matrix cell interaction
         addMouseListener(new MouseAdapter() {
@@ -39,6 +34,12 @@ public class GridPanel extends JPanel {
             public void mousePressed(MouseEvent e) {
                 handleGridClick(e.getX(), e.getY());
             }
+        });
+
+        // Repaint immediately on theme change
+        UITheme.addThemeChangeListener(() -> {
+            setBackground(UITheme.getBackgroundDark());
+            repaint();
         });
     }
 
@@ -61,20 +62,7 @@ public class GridPanel extends JPanel {
                     mouseY >= cellY && mouseY <= cellY + UITheme.CELL_SIZE) {
                     
                     if (model != null) {
-                        try {
-                            // Try calling toggleCell or setCell on model if available
-                            java.lang.reflect.Method toggleMethod = model.getClass().getMethod("toggleCell", int.class, int.class);
-                            toggleMethod.invoke(model, row, col);
-                        } catch (Exception ignored) {
-                            try {
-                                java.lang.reflect.Method isSetMethod = model.getClass().getMethod("isCellActive", int.class, int.class);
-                                boolean current = (boolean) isSetMethod.invoke(model, row, col);
-                                java.lang.reflect.Method setMethod = model.getClass().getMethod("setCell", int.class, int.class, boolean.class);
-                                setMethod.invoke(model, row, col, !current);
-                            } catch (Exception ex) {
-                                // Fallback if methods have different signatures
-                            }
-                        }
+                        model.toggleCell(row, col);
                     }
                     repaint();
                     return;
@@ -84,21 +72,7 @@ public class GridPanel extends JPanel {
     }
 
     private boolean isCellActive(int row, int col) {
-        if (model == null) return false;
-        try {
-            java.lang.reflect.Method isSetMethod = model.getClass().getMethod("isCellActive", int.class, int.class);
-            return (boolean) isSetMethod.invoke(model, row, col);
-        } catch (Exception ignored) {
-            try {
-                java.lang.reflect.Method getMethod = model.getClass().getMethod("getCell", int.class, int.class);
-                Object res = getMethod.invoke(model, row, col);
-                if (res instanceof Boolean) return (Boolean) res;
-                if (res instanceof Number) return ((Number) res).intValue() != 0;
-            } catch (Exception ex) {
-                // Return false if unresolvable
-            }
-        }
-        return false;
+        return model != null && model.isCellActive(row, col);
     }
 
     @Override
@@ -112,22 +86,29 @@ public class GridPanel extends JPanel {
         int gridH = UITheme.ROWS * (UITheme.CELL_SIZE + UITheme.GRID_GAP) - UITheme.GRID_GAP + 24;
 
         // Draw Matrix Container Panel
-        g2d.setColor(GRID_CONTAINER_BG);
+        g2d.setColor(UITheme.getPanelBackground());
         g2d.fillRoundRect(START_X - 12, START_Y - 12, gridW, gridH, 15, 15);
-        g2d.setColor(GRID_CONTAINER_BORDER);
+        g2d.setColor(UITheme.getBorderColor());
         g2d.setStroke(new BasicStroke(1f));
         g2d.drawRoundRect(START_X - 12, START_Y - 12, gridW, gridH, 15, 15);
 
-        // Draw Playhead Highlight if active
+        // Draw Dynamic Playhead Highlight if active (Steps 1 to 16)
         if (playheadStep >= 0 && playheadStep < UITheme.STEPS) {
-            g2d.setColor(PLAYHEAD_COLOR);
             int pX = START_X + playheadStep * (UITheme.CELL_SIZE + UITheme.GRID_GAP) - UITheme.GRID_GAP / 2;
-            g2d.fillRoundRect(pX, START_Y - 6, UITheme.CELL_SIZE + UITheme.GRID_GAP, gridH - 12, 10, 10);
+            int pW = UITheme.CELL_SIZE + UITheme.GRID_GAP;
+            int pH = gridH - 12;
+
+            // Glowing translucent column beam
+            g2d.setColor(UITheme.getPlayheadBeam());
+            g2d.fillRoundRect(pX, START_Y - 6, pW, pH, 10, 10);
+
+            // Shifting glowing border
+            g2d.setColor(UITheme.getPlayheadBorder());
+            g2d.setStroke(new BasicStroke(1.5f));
+            g2d.drawRoundRect(pX, START_Y - 6, pW, pH, 10, 10);
         }
 
         // Draw Column Step Numbers (1 to 16)
-        g2d.setFont(UITheme.SMALL_FONT);
-        g2d.setColor(TEXT_MUTED);
         FontMetrics fmCol = g2d.getFontMetrics();
         for (int col = 0; col < UITheme.STEPS; col++) {
             String stepStr = String.valueOf(col + 1);
@@ -135,9 +116,11 @@ public class GridPanel extends JPanel {
             int nx = cx - fmCol.stringWidth(stepStr) / 2;
             
             if (col == playheadStep) {
-                g2d.setColor(TEXT_LIGHT);
+                g2d.setFont(UITheme.NORMAL_FONT);
+                g2d.setColor(UITheme.getPrimaryAccent());
             } else {
-                g2d.setColor(TEXT_MUTED);
+                g2d.setFont(UITheme.SMALL_FONT);
+                g2d.setColor(UITheme.getTextMuted());
             }
             g2d.drawString(stepStr, nx, START_Y - 20);
         }
@@ -145,7 +128,7 @@ public class GridPanel extends JPanel {
         // Draw Matrix Grid & Row Note Labels
         for (int row = 0; row < UITheme.ROWS; row++) {
             // Note Label (e.g. C5, B4, ...)
-            g2d.setColor(TEXT_LIGHT);
+            g2d.setColor(UITheme.getTextLight());
             g2d.setFont(UITheme.NORMAL_FONT);
             FontMetrics fmRow = g2d.getFontMetrics();
             String label = row < ROW_LABELS.length ? ROW_LABELS[row] : "R" + (row + 1);
@@ -161,13 +144,14 @@ public class GridPanel extends JPanel {
                 boolean active = isCellActive(row, col);
 
                 if (active) {
+                    boolean isHit = (col == playheadStep);
                     // Outer glow
-                    g2d.setColor(PURPLE_GLOW);
+                    g2d.setColor(isHit ? UITheme.getPlayheadHitGlow() : UITheme.getActiveCellGlow());
                     g2d.fillRoundRect(x - 2, y - 2, UITheme.CELL_SIZE + 4, UITheme.CELL_SIZE + 4, 12, 12);
                     // Inner active fill
-                    g2d.setColor(PURPLE_ACTIVE);
+                    g2d.setColor(isHit ? Color.WHITE : UITheme.getActiveCellFill());
                 } else {
-                    g2d.setColor(CELL_INACTIVE);
+                    g2d.setColor(UITheme.getCellInactive());
                 }
 
                 g2d.fillRoundRect(x, y, UITheme.CELL_SIZE, UITheme.CELL_SIZE, 8, 8);

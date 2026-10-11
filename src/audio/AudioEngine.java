@@ -69,6 +69,25 @@ public class AudioEngine {
     private static volatile boolean running = true;
     private static final Thread mixerThread = new Thread(AudioEngine::mixLoop, "AudioEngine-Mixer");
 
+    // ---- Oscilloscope waveform snapshot buffer --------------------------
+    private static final int SNAPSHOT_SIZE = 256;
+    private static final float[] snapshotBuffer = new float[SNAPSHOT_SIZE];
+    private static final Object snapshotLock = new Object();
+
+    /**
+     * Copies the latest audio output waveform samples into the provided array.
+     * Non-blocking and thread-safe.
+     *
+     * @param dest array to receive the normalized samples (range approx -1.0 to 1.0)
+     */
+    public static void getWaveformSnapshot(float[] dest) {
+        if (dest == null) return;
+        synchronized (snapshotLock) {
+            int len = Math.min(dest.length, snapshotBuffer.length);
+            System.arraycopy(snapshotBuffer, 0, dest, 0, len);
+        }
+    }
+
     // ---- Song sample data (guarded by songLock) -------------------------
     private static final Object songLock = new Object();
     /** 16 pre-sliced PCM chunks in the mixer's output format (big-endian 16-bit mono). */
@@ -312,6 +331,14 @@ public class AudioEngine {
                     short pcm = (short) (s * 32767.0);
                     out[i * 2]     = (byte) ((pcm >> 8) & 0xFF);
                     out[i * 2 + 1] = (byte) (pcm & 0xFF);
+                }
+
+                // Update visualizer snapshot buffer for real-time oscilloscope
+                synchronized (snapshotLock) {
+                    for (int i = 0; i < SNAPSHOT_SIZE; i++) {
+                        int srcIndex = (i * BLOCK_FRAMES) / SNAPSHOT_SIZE;
+                        snapshotBuffer[i] = (float) Math.tanh(mix[srcIndex] * MASTER_GAIN);
+                    }
                 }
 
                 // Blocks when the line buffer is full, which paces the loop

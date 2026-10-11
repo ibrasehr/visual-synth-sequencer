@@ -11,18 +11,24 @@ import audio.BeatDetector;
 import model.PatternStorage;
 import model.SequencerModel;
 import ui.GridPanel;
+import ui.OscilloscopePanel;
+import ui.UITheme;
 
 public class MainApp extends JFrame {
+    private static final long serialVersionUID = 1L;
+
     private final SequencerModel model;
     private final GridPanel gridPanel;
+    private final OscilloscopePanel oscilloscopePanel;
+    private JToolBar toolbar;
     private Timer timer;
     private JLabel bpmLabel;
     private JSlider bpmSlider;
 
     private int currentStep = -1;
     private int bpm = 120;
-private AudioEngine.Waveform currentWaveform = AudioEngine.Waveform.SINE;
-private JComboBox<String> presetChordDropdown;
+    private AudioEngine.Waveform currentWaveform = AudioEngine.Waveform.SINE;
+    private JComboBox<String> presetChordDropdown;
 
     public MainApp() {
         setTitle("Visual Synth Sequencer — Executive Control Panel");
@@ -34,22 +40,40 @@ private JComboBox<String> presetChordDropdown;
         gridPanel = new GridPanel(model);
         add(gridPanel, BorderLayout.CENTER);
 
+        // Real-time Oscilloscope / Waveform Visualizer
+        oscilloscopePanel = new OscilloscopePanel();
+        add(oscilloscopePanel, BorderLayout.SOUTH);
+
         // Build top control toolbar
-        JToolBar toolbar = createToolBar();
+        toolbar = createToolBar();
         add(toolbar, BorderLayout.NORTH);
 
+        applyTheme();
+        UITheme.addThemeChangeListener(this::applyTheme);
+
         pack();
+        setPreferredSize(new Dimension(1260, 620));
+        setMinimumSize(new Dimension(1180, 580));
+        setSize(1260, 620);
         setLocationRelativeTo(null);
         setResizable(true);
 
         initTimingEngine();
     }
 
+    private void applyTheme() {
+        getContentPane().setBackground(UITheme.getBackgroundDark());
+        if (toolbar != null) {
+            toolbar.setBackground(UITheme.getToolbarBackground());
+        }
+        repaint();
+    }
+
     private JToolBar createToolBar() {
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
-        toolBar.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        toolBar.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        toolBar.setLayout(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        toolBar.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
 
         // Transport Controls
         JButton playBtn = new JButton("▶ Play");
@@ -60,9 +84,9 @@ private JComboBox<String> presetChordDropdown;
 
         // BPM Controls
         bpmLabel = new JLabel("BPM: " + bpm);
-        bpmLabel.setPreferredSize(new Dimension(70, 20));
+        bpmLabel.setPreferredSize(new Dimension(60, 20));
         bpmSlider = new JSlider(60, 240, bpm);
-        bpmSlider.setPreferredSize(new Dimension(150, 25));
+        bpmSlider.setPreferredSize(new Dimension(115, 24));
         bpmSlider.addChangeListener(e -> {
             bpm = bpmSlider.getValue();
             bpmLabel.setText("BPM: " + bpm);
@@ -77,7 +101,7 @@ private JComboBox<String> presetChordDropdown;
         JLabel waveLabel = new JLabel("Waveform:");
         String[] waveformOptions = {"Sine", "Square", "Sawtooth", "Triangle"};
         JComboBox<String> waveCombo = new JComboBox<>(waveformOptions);
-        waveCombo.setPreferredSize(new Dimension(110, 25));
+        waveCombo.setPreferredSize(new Dimension(95, 24));
         waveCombo.addActionListener(e -> {
             String selected = (String) waveCombo.getSelectedItem();
             if (selected != null) {
@@ -99,56 +123,78 @@ private JComboBox<String> presetChordDropdown;
             }
         });
 
-// Static Preset Chord / Pattern Dropdown
-String[] presetNames = {"Presets: None", "C-Major Arpeggio", "Basic Beat", "C-Major Chord"};
-presetChordDropdown = new JComboBox<>(presetNames);
-presetChordDropdown.setToolTipText("Select static chord or pattern preset");
-presetChordDropdown.addActionListener(e -> handlePresetSelection());
+        // Static Preset Chord / Pattern Dropdown
+        String[] presetNames = {"Presets: None", "C-Major Arpeggio", "Basic Beat", "C-Major Chord"};
+        presetChordDropdown = new JComboBox<>(presetNames);
+        presetChordDropdown.setPreferredSize(new Dimension(125, 24));
+        presetChordDropdown.setToolTipText("Select static chord or pattern preset");
+        presetChordDropdown.addActionListener(e -> handlePresetSelection());
 
-// Save, Load, Reset, and Import Controls
-JButton saveBtn = new JButton("Save Pattern");
-JButton loadBtn = new JButton("Load Pattern");
-JButton resetBtn = new JButton("Reset Grid");
-JButton importWavBtn = new JButton("Import Beat from WAV");
+        // Save, Load, Reset, and Import Controls (Utility Buttons)
+        JButton saveBtn = new JButton("Save Pattern");
+        JButton loadBtn = new JButton("Load Pattern");
+        JButton resetBtn = new JButton("Reset Grid");
+        JButton importWavBtn = new JButton("Import WAV");
+        importWavBtn.setToolTipText("Import Beat from WAV");
 
-saveBtn.addActionListener(e -> handleSavePattern());
-loadBtn.addActionListener(e -> handleLoadPattern());
-resetBtn.addActionListener(e -> {
-    model.clear();
-    gridPanel.repaint();
-});
-importWavBtn.addActionListener(e -> handleImportBeat());
+        saveBtn.addActionListener(e -> handleSavePattern());
+        loadBtn.addActionListener(e -> handleLoadPattern());
+        resetBtn.addActionListener(e -> {
+            model.clear();
+            AudioEngine.clearSongData();
+            if (presetChordDropdown != null) {
+                presetChordDropdown.setSelectedIndex(0);
+            }
+            gridPanel.repaint();
+        });
+        importWavBtn.addActionListener(e -> handleImportBeat());
+
+        // Theme Switcher Group (Keeps label and dropdown atomically together)
+        JPanel themeGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        themeGroup.setOpaque(false);
+        JLabel themeLabel = new JLabel("Theme:");
+        JComboBox<UITheme.ThemeMode> themeDropdown = new JComboBox<>(UITheme.ThemeMode.values());
+        themeDropdown.setSelectedItem(UITheme.getCurrentTheme());
+        themeDropdown.setPreferredSize(new Dimension(135, 24));
+        themeDropdown.setToolTipText("Select Color Theme (Industrial Gothic / Neon Cyberpunk)");
+        themeDropdown.addActionListener(e -> {
+            UITheme.ThemeMode selected = (UITheme.ThemeMode) themeDropdown.getSelectedItem();
+            if (selected != null) {
+                UITheme.setTheme(selected);
+            }
+        });
+        themeGroup.add(themeLabel);
+        themeGroup.add(themeDropdown);
+
         // Assemble Controls into Toolbar
         toolBar.add(playBtn);
         toolBar.add(stopBtn);
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.addSeparator();
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.add(bpmLabel);
         toolBar.add(bpmSlider);
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.addSeparator();
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.add(waveLabel);
         toolBar.add(waveCombo);
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.addSeparator();
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.add(new JLabel("Preset:"));
         toolBar.add(presetChordDropdown);
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.addSeparator();
-        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(Box.createHorizontalStrut(3));
         toolBar.add(saveBtn);
         toolBar.add(loadBtn);
-toolBar.add(Box.createHorizontalStrut(10));
-toolBar.addSeparator();
-toolBar.add(Box.createHorizontalStrut(10));
-toolBar.add(resetBtn);
-toolBar.add(Box.createHorizontalStrut(10));
-toolBar.addSeparator();
-toolBar.add(Box.createHorizontalStrut(10));
-toolBar.add(importWavBtn);
+        toolBar.add(resetBtn);
+        toolBar.add(importWavBtn);
+        toolBar.add(Box.createHorizontalStrut(3));
+        toolBar.addSeparator();
+        toolBar.add(Box.createHorizontalStrut(3));
+        toolBar.add(themeGroup);
 
         return toolBar;
     }
@@ -196,23 +242,15 @@ toolBar.add(importWavBtn);
         // Query active cells in current column and trigger audio
         for (int row = 0; row < SequencerModel.ROWS; row++) {
             if (model.isCellActive(row, currentStep)) {
-// Query active cells in current column and trigger audio
-boolean songActive = AudioEngine.isSongLoaded();
-boolean sampleTriggered = false;
-
-for (int row = 0; row < SequencerModel.ROWS; row++) {
-    if (model.isCellActive(row, currentStep)) {
-        if (songActive && !sampleTriggered) {
-            // Play the audio slice once per step (avoid stacking duplicates)
-            AudioEngine.playSample(currentStep);
-            sampleTriggered = true;
-        } else if (!songActive) {
-            // Fallback: synthesize tone using your multi-waveform dropdown selection
-            double frequency = model.getFrequency(row);
-            AudioEngine.playTone(frequency, 120, currentWaveform);
-        }
-    }
-}
+                if (songActive && !sampleTriggered) {
+                    // Play the audio slice once per step (avoid stacking duplicates)
+                    AudioEngine.playSample(currentStep);
+                    sampleTriggered = true;
+                } else if (!songActive) {
+                    // Fallback: synthesize tone using your multi-waveform dropdown selection
+                    double frequency = model.getFrequency(row);
+                    AudioEngine.playTone(frequency, 120, currentWaveform);
+                }
             }
         }
     }
@@ -240,6 +278,8 @@ for (int row = 0; row < SequencerModel.ROWS; row++) {
         int index = presetChordDropdown.getSelectedIndex();
         if (index <= 0) return;
 
+        // Revert audio engine to synthesized tones for presets
+        AudioEngine.clearSongData();
         model.clear();
         switch (index) {
             case 1 -> { // C-Major Arpeggio

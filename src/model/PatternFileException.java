@@ -14,6 +14,7 @@ package model;
  * @author Member 3 – Data &amp; Persistence Engineer
  */
 public class PatternFileException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     /**
      * Constructs a new {@code PatternFileException} with the given
